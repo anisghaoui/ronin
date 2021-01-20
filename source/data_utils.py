@@ -86,22 +86,21 @@ def load_cached_sequences(seq_type, root_dir, data_list, cache_path, **kwargs):
         if cache_path is not None and osp.exists(osp.join(cache_path, data_list[i] + '.hdf5')):
             with h5py.File(osp.join(cache_path, data_list[i] + '.hdf5')) as f:
                 feat = np.copy(f['feature'])
-                targ = np.copy(f['target'])
+                # targ = np.copy(f['target'])
                 aux = np.copy(f['aux'])
         else:
             seq = seq_type(osp.join(root_dir, data_list[i]), **kwargs)
-            feat, targ, aux = seq.get_feature(), seq.get_target(), seq.get_aux()
+            feat, _, aux = seq.get_feature(), seq.get_target(), seq.get_aux()
             print(seq.get_meta())
             if cache_path is not None and osp.isdir(cache_path):
                 with h5py.File(osp.join(cache_path, data_list[i] + '.hdf5'), 'x') as f:
                     f['feature'] = feat
-                    f['target'] = targ
+                    # f['target'] = targ
                     f['aux'] = aux
         features_all.append(feat)
-        targets_all.append(targ)
+        # targets_all.append(targ)
         aux_all.append(aux)
-    return features_all, targets_all, aux_all
-
+    return features_all, None, aux_all
 
 def select_orientation_source(data_path, max_ori_error=20.0, grv_only=True, use_ekf=True):
     """
@@ -128,8 +127,12 @@ def select_orientation_source(data_path, max_ori_error=20.0, grv_only=True, use_
 
     with open(osp.join(data_path, 'info.json')) as f:
         info = json.load(f)
-        ori_errors = np.array(
-            [info['gyro_integration_error'], info['grv_ori_error'], info['ekf_ori_error']])
+        try:
+            ori_errors = np.array([info['gyro_integration_error'], info['grv_ori_error'], info['ekf_ori_error']])
+        except KeyError:
+            ori_errors =np.array([0, 0, 0])
+            print("no orientation error info")
+            
         init_gyro_bias = np.array(info['imu_init_gyro_bias'])
 
     with h5py.File(osp.join(data_path, 'data.hdf5')) as f:

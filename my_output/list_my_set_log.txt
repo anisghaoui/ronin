@@ -1,0 +1,2 @@
+pretrained_models/ronin_lstm/checkpoints/ronin_lstm_checkpoint.pt
+Seq traj_len velocity ate rte

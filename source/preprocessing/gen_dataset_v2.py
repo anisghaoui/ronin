@@ -84,7 +84,7 @@ if __name__ == '__main__':
         root_dir = os.path.dirname(args.list) + '/'
         with open(args.list) as f:
             for s in f.readlines():
-                if s[0] is not '#':
+                if s[0] != '#':
                     dataset_list.append(s.strip('\n'))
     else:
         raise ValueError('No data specified')
@@ -106,7 +106,7 @@ if __name__ == '__main__':
         length = 0
         if os.path.exists(data_root + '/processed/data.csv') and not args.recompute:
             data_pandas = pandas.read_csv(data_root + '/processed/data.csv')
-        elif os.path.exists(data_root + '/processed/data.csv') and not args.recompute:
+        elif os.path.exists(data_root + '/processed/data.pkl') and not args.recompute:
             data_pandas = pandas.read_pickle(data_root + '/processed/data.pkl')
         else:
             print('------------------\nProcessing ' + data_root, ', type: ' + motion_type)
@@ -213,7 +213,7 @@ if __name__ == '__main__':
                 os.makedirs(output_folder)
             data_pandas = pandas.DataFrame(data_mat, columns=column_list)
             data_pandas.to_pickle(output_folder + '/data.pkl')
-            print('Dataset written to ' + output_folder + '/data.csv')
+            print('Dataset written to ' + output_folder + '/data.pkl')
 
             if not args.fast_mode and not args.no_trajectory and 'pose' in all_sources:
                 tango_pos = processed_source['tango_pos'][args.skip_front:-args.skip_end]

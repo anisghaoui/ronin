@@ -1,3 +1,6 @@
+# https://source.android.com/devices/sensors/sensor-types#game_rotation_vector
+
+
 import json
 import os
 import sys
@@ -10,7 +13,6 @@ import numpy as np
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
-
 
 from model_temporal import LSTMSeqNetwork, BilinearLSTMSeqNetwork, TCNSeqNetwork
 from utils import load_config, MSEAverageMeter
@@ -55,7 +57,8 @@ class GlobalPosLoss(torch.nn.Module):
         pred_pos = torch.cumsum(pred[:, 1:, ], 1)
         if self.mode == 'part':
             gt_pos = gt_pos[:, self.history:, :] - gt_pos[:, :-self.history, :]
-            pred_pos = pred_pos[:, self.history:, :] - pred_pos[:, :-self.history, :]
+            pred_pos = pred_pos[:, self.history:, :] - \
+                pred_pos[:, :-self.history, :]
         loss = self.mse_loss(pred_pos, gt_pos)
         return torch.mean(loss)
 
@@ -92,16 +95,22 @@ def get_dataset(root_dir, data_list, args, **kwargs):
     elif args.dataset == 'ridi':
         from data_ridi import RIDIGlobSpeedSequence
         seq_type = RIDIGlobSpeedSequence
-    dataset = SequenceToSequenceDataset(seq_type, root_dir, data_list, args.cache_path, args.step_size, args.window_size,
-                                        random_shift=random_shift, transform=transforms, shuffle=shuffle,
-                                        grv_only=grv_only, **kwargs)
+    dataset = SequenceToSequenceDataset(seq_type, root_dir, data_list,
+                                        args.cache_path,
+                                        args.step_size, args.window_size,
+                                        random_shift=random_shift,
+                                        transform=transforms,
+                                        shuffle=shuffle,
+                                        grv_only=grv_only,
+                                        **kwargs)
 
     return dataset
 
 
 def get_dataset_from_list(root_dir, list_path, args, **kwargs):
     with open(list_path) as f:
-        data_list = [s.strip().split(',')[0] for s in f.readlines() if len(s) > 0 and s[0] != '#']
+        data_list = [s.strip().split(',')[0]
+                     for s in f.readlines() if len(s) > 0 and s[0] != '#']
     return get_dataset(root_dir, data_list, args, **kwargs)
 
 
@@ -111,20 +120,32 @@ def get_model(args, **kwargs):
         config['dropout'] = kwargs.get('dropout')
 
     if args.type == 'tcn':
-        network = TCNSeqNetwork(_input_channel, _output_channel, args.kernel_size,
-                                layer_channels=args.channels, **config)
-        print("TCN Network. Receptive field: {} ".format(network.get_receptive_field()))
+        network = TCNSeqNetwork(_input_channel, _output_channel,
+                                args.kernel_size,
+                                layer_channels=args.channels,
+                                **config)
+        print("TCN Network. Receptive field: {} ".format(
+            network.get_receptive_field()))
     elif args.type == 'lstm_bi':
         print("Bilinear LSTM Network")
-        network = BilinearLSTMSeqNetwork(_input_channel, _output_channel, args.batch_size, device,
-                                         lstm_layers=args.layers, lstm_size=args.layer_size, **config).to(device)
+        network = BilinearLSTMSeqNetwork(_input_channel, _output_channel,
+                                         args.batch_size, device,
+                                         lstm_layers=args.layers,
+                                         lstm_size=args.layer_size,
+                                         **config).to(device)
     else:
         print("Simple LSTM Network")
-        network = LSTMSeqNetwork(_input_channel, _output_channel, args.batch_size, device,
-                                 lstm_layers=args.layers, lstm_size=args.layer_size, **config).to(device)
+        network = LSTMSeqNetwork(_input_channel, _output_channel,
+                                 args.batch_size, device,
+                                 lstm_layers=args.layers,
+                                 lstm_size=args.layer_size,
+                                 **config).to(device)
 
-    pytorch_total_params = sum(p.numel() for p in network.parameters() if p.requires_grad)
-    print('Network constructed. trainable parameters: {}'.format(pytorch_total_params))
+    pytorch_total_params = sum(p.numel()
+                               for p in network.parameters()
+                               if p.requires_grad)
+    print('Network constructed. trainable parameters: {}'.format(
+        pytorch_total_params))
     return network
 
 
@@ -153,16 +174,22 @@ def format_string(*argv, sep=' '):
 def train(args, **kwargs):
     # Loading data
     start_t = time.time()
-    train_dataset = get_dataset_from_list(args.data_dir, args.train_list, args, mode='train', **kwargs)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers, shuffle=True,
+    train_dataset = get_dataset_from_list(
+        args.data_dir, args.train_list, args, mode='train', **kwargs)
+    train_loader = DataLoader(train_dataset,
+                              batch_size=args.batch_size,
+                              num_workers=args.num_workers,
+                              shuffle=True,
                               drop_last=True)
     end_t = time.time()
 
     print('Training set loaded. Time usage: {:.3f}s'.format(end_t - start_t))
     val_dataset, val_loader = None, None
     if args.val_list is not None:
-        val_dataset = get_dataset_from_list(args.data_dir, args.val_list, args, mode='val', **kwargs)
-        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        val_dataset = get_dataset_from_list(
+            args.data_dir, args.val_list, args, mode='val', **kwargs)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                                shuffle=True, drop_last=True)
         print('Validation set loaded')
 
     global device
@@ -187,11 +214,13 @@ def train(args, **kwargs):
         val_mini_batches = len(val_loader)
 
     network = get_model(args, **kwargs).to(device)
-    history = network.get_receptive_field() if args.type == 'tcn' else args.window_size // 2
+    history = network.get_receptive_field(
+    ) if args.type == 'tcn' else args.window_size // 2
     criterion = get_loss_function(history, args, **kwargs)
 
     optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.75, verbose=True, eps=1e-12)
+    scheduler = ReduceLROnPlateau(
+        optimizer, 'min', patience=10, factor=0.75, verbose=True, eps=1e-12)
     quiet_mode = kwargs.get('quiet', False)
     use_scheduler = kwargs.get('use_scheduler', False)
 
@@ -202,7 +231,8 @@ def train(args, **kwargs):
             if args.continue_from is None:
                 os.remove(log_file)
             else:
-                copyfile(log_file, osp.join(args.out_dir, 'logs', 'log_old.txt'))
+                copyfile(log_file, osp.join(
+                    args.out_dir, 'logs', 'log_old.txt'))
 
     start_epoch = 0
     if args.continue_from is not None and osp.exists(args.continue_from):
@@ -210,9 +240,11 @@ def train(args, **kwargs):
             model_data = json.load(f)
 
         if device.type == 'cpu':
-            checkpoints = torch.load(args.continue_from, map_location=lambda storage, location: storage)
+            checkpoints = torch.load(
+                args.continue_from, map_location=lambda storage, location: storage)
         else:
-            checkpoints = torch.load(args.continue_from, map_location={model_data['device']: args.device})
+            checkpoints = torch.load(args.continue_from, map_location={
+                                     model_data['device']: args.device})
 
         start_epoch = checkpoints.get('epoch', 0)
         network.load_state_dict(checkpoints.get('model_state_dict'))
@@ -239,7 +271,8 @@ def train(args, **kwargs):
                 feat, targ = feat.to(device), targ.to(device)
                 optimizer.zero_grad()
                 predicted = network(feat)
-                train_vel.add(predicted.cpu().detach().numpy(), targ.cpu().detach().numpy())
+                train_vel.add(predicted.cpu().detach().numpy(),
+                              targ.cpu().detach().numpy())
                 loss = criterion(predicted, targ)
                 train_loss += loss.cpu().detach().numpy()
                 loss.backward()
@@ -265,10 +298,12 @@ def train(args, **kwargs):
                     feat, targ = feat.to(device), targ.to(device)
                     optimizer.zero_grad()
                     pred = network(feat)
-                    val_vel.add(pred.cpu().detach().numpy(), targ.cpu().detach().numpy())
+                    val_vel.add(pred.cpu().detach().numpy(),
+                                targ.cpu().detach().numpy())
                     val_loss += criterion(pred, targ).cpu().detach().numpy()
                 val_loss = val_loss / val_mini_batches
-                log_line = format_string(log_line, val_loss, *val_vel.get_channel_avg())
+                log_line = format_string(
+                    log_line, val_loss, *val_vel.get_channel_avg())
                 if not quiet_mode:
                     print('Validation loss: {} vel_loss: {}/{:.6f}'.format(val_loss, val_vel.get_channel_avg(),
                                                                            val_vel.get_total_avg()))
@@ -276,7 +311,8 @@ def train(args, **kwargs):
                     best_val_loss = val_loss
                     saved_model = True
                     if args.out_dir:
-                        model_path = osp.join(args.out_dir, 'checkpoints', 'checkpoint_%d.pt' % epoch)
+                        model_path = osp.join(
+                            args.out_dir, 'checkpoints', 'checkpoint_%d.pt' % epoch)
                         torch.save({'model_state_dict': network.state_dict(),
                                     'epoch': epoch,
                                     'loss': train_errs[epoch],
@@ -285,8 +321,10 @@ def train(args, **kwargs):
                 if use_scheduler:
                     scheduler.step(val_loss)
 
-            if args.out_dir and not saved_model and (epoch + 1) % args.save_interval == 0:  # save even with validation
-                model_path = osp.join(args.out_dir, 'checkpoints', 'icheckpoint_%d.pt' % epoch)
+            # save even with validation
+            if args.out_dir and not saved_model and (epoch + 1) % args.save_interval == 0:
+                model_path = osp.join(
+                    args.out_dir, 'checkpoints', 'icheckpoint_%d.pt' % epoch)
                 torch.save({'model_state_dict': network.state_dict(),
                             'epoch': epoch,
                             'loss': train_errs[epoch],
@@ -306,14 +344,16 @@ def train(args, **kwargs):
 
     print('Training completed')
     if args.out_dir:
-        model_path = osp.join(args.out_dir, 'checkpoints', 'checkpoint_latest.pt')
+        model_path = osp.join(args.out_dir, 'checkpoints',
+                              'checkpoint_latest.pt')
         torch.save({'model_state_dict': network.state_dict(),
                     'epoch': epoch,
                     'optimizer_state_dict': optimizer.state_dict()}, model_path)
 
 
 def recon_traj_with_preds_global(dataset, preds, ind=None, seq_id=0, type='preds', **kwargs):
-    ind = ind if ind is not None else np.array([i[1] for i in dataset.index_map if i[0] == seq_id], dtype=np.int)
+    ind = ind if ind is not None else np.array(
+        [i[1] for i in dataset.index_map if i[0] == seq_id], dtype=np.int)
 
     if type == 'gt':
         pos = dataset.gt_pos[seq_id][:, :2]
@@ -322,12 +362,12 @@ def recon_traj_with_preds_global(dataset, preds, ind=None, seq_id=0, type='preds
         # Compute the global velocity from local velocity.
         dts = np.mean(ts[ind[1:]] - ts[ind[:-1]])
         pos = preds * dts
-        pos[0, :] = dataset.gt_pos[seq_id][0, :2]
+        pos[0, :] = (0, 0)
         pos = np.cumsum(pos, axis=0)
     veloc = preds
-    ori = dataset.orientations[seq_id]
+    # ori = dataset.orientations[seq_id]
 
-    return pos, veloc, ori
+    return pos, veloc
 
 
 def test(args, **kwargs):
@@ -342,9 +382,11 @@ def test(args, **kwargs):
         root_dir = osp.split(args.test_path)[0]
         test_data_list = [osp.split(args.test_path)[1]]
     elif args.test_list is not None:
-        root_dir = args.data_dir if args.data_dir else osp.split(args.test_list)[0]
+        root_dir = args.data_dir if args.data_dir else osp.split(args.test_list)[
+            0]
         with open(args.test_list) as f:
-            test_data_list = [s.strip().split(',')[0] for s in f.readlines() if len(s) > 0 and s[0] != '#']
+            test_data_list = [s.strip().split(',')[0]
+                              for s in f.readlines() if len(s) > 0 and s[0] != '#']
     else:
         raise ValueError('Either test_path or test_list must be specified.')
 
@@ -358,9 +400,11 @@ def test(args, **kwargs):
         model_data = json.load(f)
 
     if device.type == 'cpu':
-        checkpoint = torch.load(args.model_path, map_location=lambda storage, location: storage)
+        checkpoint = torch.load(
+            args.model_path, map_location=lambda storage, location: storage)
     else:
-        checkpoint = torch.load(args.model_path, map_location={model_data['device']: args.device})
+        checkpoint = torch.load(args.model_path, map_location={
+                                model_data['device']: args.device})
 
     network = get_model(args, **kwargs)
     network.load_state_dict(checkpoint.get('model_state_dict'))
@@ -369,99 +413,59 @@ def test(args, **kwargs):
 
     log_file = None
     if args.test_list and args.out_dir:
-        log_file = osp.join(args.out_dir, osp.split(args.test_list)[-1].split('.')[0] + '_log.txt')
+        log_file = osp.join(args.out_dir, osp.split(
+            args.test_list)[-1].split('.')[0] + '_log.txt')
         with open(log_file, 'w') as f:
             f.write(args.model_path + '\n')
             f.write('Seq traj_len velocity ate rte\n')
 
     losses_vel = MSEAverageMeter(2, [1], _output_channel)
     ate_all, rte_all = [], []
-    pred_per_min = 200 * 60
+    pred_per_min = 200 * 60  # ANIS
 
-    seq_dataset = get_dataset(root_dir, test_data_list, args, mode='test', **kwargs)
+    seq_dataset = get_dataset(root_dir, test_data_list,
+                              args, mode='test',**kwargs)
 
     for idx, data in enumerate(test_data_list):
         assert data == osp.split(seq_dataset.data_path[idx])[1]
 
         feat, vel = seq_dataset.get_test_seq(idx)
         feat = torch.Tensor(feat).to(device)
-        preds = np.squeeze(network(feat).cpu().detach().numpy())[-vel.shape[0]:, :_output_channel]
 
-        ind = np.arange(vel.shape[0])
-        vel_losses = np.mean((vel - preds) ** 2, axis=0)
-        losses_vel.add(vel, preds)
+        preds = np.squeeze(network(feat).cpu().detach().numpy()
+                           )[-feat.shape[1]:, :_output_channel]
+
+        ind = np.arange(2)
 
         print('Reconstructing trajectory')
-        pos_pred, gv_pred, _ = recon_traj_with_preds_global(seq_dataset, preds, ind=ind, type='pred', seq_id=idx)
-        pos_gt, gv_gt, _ = recon_traj_with_preds_global(seq_dataset, vel, ind=ind, type='gt', seq_id=idx)
+        pos_pred, gv_pred, = recon_traj_with_preds_global(
+            seq_dataset, preds, ind=ind, type='pred', seq_id=idx)
 
         if args.out_dir is not None and osp.isdir(args.out_dir):
-            np.save(osp.join(args.out_dir, '{}_{}.npy'.format(data, args.type)),
-                    np.concatenate([pos_pred, pos_gt], axis=1))
-
-        ate = compute_absolute_trajectory_error(pos_pred, pos_gt)
-        if pos_pred.shape[0] < pred_per_min:
-            ratio = pred_per_min / pos_pred.shape[0]
-            rte = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pos_pred.shape[0] - 1) * ratio
-        else:
-            rte = compute_relative_trajectory_error(pos_pred, pos_gt, delta=pred_per_min)
-        pos_cum_error = np.linalg.norm(pos_pred - pos_gt, axis=1)
-        ate_all.append(ate)
-        rte_all.append(rte)
-
-        print('Sequence {}, Velocity loss {} / {}, ATE: {}, RTE:{}'.format(data, vel_losses, np.mean(vel_losses), ate,
-                                                                           rte))
-        log_line = format_string(data, np.mean(vel_losses), ate, rte)
-
+            np.save(osp.join(args.out_dir, '{}.npy'.format(data, args.type)),
+                    np.concatenate([pos_pred], axis=1))
         if not args.fast_test:
             kp = preds.shape[1]
             if kp == 2:
                 targ_names = ['vx', 'vy']
-            elif kp == 3:
-                targ_names = ['vx', 'vy', 'vz']
 
             plt.figure('{}'.format(data), figsize=(16, 9))
-            plt.subplot2grid((kp, 2), (0, 0), rowspan=kp - 1)
             plt.plot(pos_pred[:, 0], pos_pred[:, 1])
-            plt.plot(pos_gt[:, 0], pos_gt[:, 1])
             plt.title(data)
             plt.axis('equal')
-            plt.legend(['Predicted', 'Ground truth'])
-            plt.subplot2grid((kp, 2), (kp - 1, 0))
-            plt.plot(pos_cum_error)
-            plt.legend(['ATE:{:.3f}, RTE:{:.3f}'.format(ate_all[-1], rte_all[-1])])
-            for i in range(kp):
-                plt.subplot2grid((kp, 2), (i, 1))
-                plt.plot(ind, preds[:, i])
-                plt.plot(ind, vel[:, i])
-                plt.legend(['Predicted', 'Ground truth'])
-                plt.title('{}, error: {:.6f}'.format(targ_names[i], vel_losses[i]))
+            plt.grid()
+            plt.legend(['Predicted'])
+
             plt.tight_layout()
+
+            if args.out_dir is not None and osp.isdir(args.out_dir):
+                plt.savefig(
+                    osp.join(args.out_dir, '{}_{}.png'.format(data, args.type)))
 
             if args.show_plot:
                 plt.show()
-
-            if args.out_dir is not None and osp.isdir(args.out_dir):
-                plt.savefig(osp.join(args.out_dir, '{}_{}.png'.format(data, args.type)))
-
-        if log_file is not None:
-            with open(log_file, 'a') as f:
-                log_line += '\n'
-                f.write(log_line)
-
         plt.close('all')
 
-    ate_all = np.array(ate_all)
-    rte_all = np.array(rte_all)
-
-    measure = format_string('ATE', 'RTE', sep='\t')
-    values = format_string(np.mean(ate_all), np.mean(rte_all), sep='\t')
-    print(measure, '\n', values)
-
-    if log_file is not None:
-        with open(log_file, 'a') as f:
-            f.write(measure + '\n')
-            f.write(values)
 
 
 if __name__ == '__main__':
@@ -469,7 +473,8 @@ if __name__ == '__main__':
     Run file with individual arguments or/and config file. If argument appears in both config file and args, 
     args is given precedence.
     """
-    default_config_file = osp.abspath(osp.join(osp.abspath(__file__), '../../config/temporal_model_defaults.json'))
+    default_config_file = osp.abspath(osp.join(osp.abspath(
+        __file__), '../../config/temporal_model_defaults.json'))
 
     import argparse
 
@@ -479,28 +484,35 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, help='Configuration file [Default: {}]'.format(default_config_file),
                         default=default_config_file)
     # common
-    parser.add_argument('--type', type=str, choices=['tcn', 'lstm', 'lstm_bi'], help='Model type')
-    parser.add_argument('--data_dir', type=str, help='Directory for data files if different from list path.')
+    parser.add_argument('--type', type=str,
+                        choices=['tcn', 'lstm', 'lstm_bi'], help='Model type')
+    parser.add_argument('--data_dir', type=str,
+                        help='Directory for data files if different from list path.')
     parser.add_argument('--cache_path', type=str, default=None)
-    parser.add_argument('--feature_sigma', type=float, help='Gaussian for smoothing features')
-    parser.add_argument('--target_sigma', type=float, help='Gaussian for smoothing target')
+    parser.add_argument('--feature_sigma', type=float,
+                        help='Gaussian for smoothing features')
+    parser.add_argument('--target_sigma', type=float,
+                        help='Gaussian for smoothing target')
     parser.add_argument('--window_size', type=int)
     parser.add_argument('--step_size', type=int)
     parser.add_argument('--batch_size', type=int)
     parser.add_argument('--num_workers', type=int)
     parser.add_argument('--out_dir', type=str, default=None)
-    parser.add_argument('--device', type=str, help='Cuda device (e.g:- cuda:0) or cpu')
+    parser.add_argument('--device', type=str,
+                        help='Cuda device (e.g:- cuda:0) or cpu')
     parser.add_argument('--dataset', type=str, choices=['ronin', 'ridi'])
     # tcn
     tcn_cmd = parser.add_argument_group('tcn', 'configuration for TCN')
     tcn_cmd.add_argument('--kernel_size', type=int)
-    tcn_cmd.add_argument('--channels', type=str, help='Channel sizes for TCN layers (comma separated)')
+    tcn_cmd.add_argument('--channels', type=str,
+                         help='Channel sizes for TCN layers (comma separated)')
     # lstm
     lstm_cmd = parser.add_argument_group('lstm', 'configuration for LSTM')
     lstm_cmd.add_argument('--layers', type=int)
     lstm_cmd.add_argument('--layer_size', type=int)
 
-    mode = parser.add_subparsers(title='mode', dest='mode', help='Operation: [train] train model, [test] evaluate model')
+    mode = parser.add_subparsers(
+        title='mode', dest='mode', help='Operation: [train] train model, [test] evaluate model')
     mode.required = True
     # train
     train_cmd = mode.add_parser('train')
@@ -535,9 +547,9 @@ if __name__ == '__main__':
 
     print(args, kwargs)
     if args.mode == 'train':
-        train(args, **kwargs)
+        train(args, **kwargs, with_orientation = True)
     elif args.mode == 'test':
         if not args.model_path:
             raise ValueError("Model path required")
         args.batch_size = 1
-        test(args, **kwargs)
+        test(args, **kwargs, with_orientation = True)

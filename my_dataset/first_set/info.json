@@ -1,0 +1,17 @@
+{
+    "start_frame":0,
+    "type": "unannotated",
+    "length": 36.23999918997288,
+    "device": "unknown",
+    "imu_reference_time": 0.0,
+    "imu_init_gyro_bias": [
+        0.02766700000000001,
+        -0.0008979999999999544,
+        -0.02581499999999999
+    ],
+    "imu_end_gyro_bias": [
+        0.027667,
+        -0.000897,
+        -0.025814
+    ]
+}

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
+import torch.nn.functional as nnf
 
 from data_glob_speed import *
 from transformations import *
@@ -44,9 +45,16 @@ def run_test(network, data_loader, device, eval_mode=True):
     if eval_mode:
         network.eval()
     for bid, (feat, targ, _, _) in enumerate(data_loader):
-        pred = network(feat.to(device)).cpu().detach().numpy()
+        pred = network(feat.to(device)).cpu().detach()
+
+        # addition :
+        print(" probablities")
+        prob = nnf.softmax(pred, dim=1)
+        print(F"{prob=}")  # I can compute output probability
+
         targets_all.append(targ.detach().numpy())
-        preds_all.append(pred)
+        preds_all.append(pred.numpy())
+
     targets_all = np.concatenate(targets_all, axis=0)
     preds_all = np.concatenate(preds_all, axis=0)
     return targets_all, preds_all
@@ -80,6 +88,7 @@ def get_dataset(root_dir, data_list, args, **kwargs):
     elif args.dataset == 'ridi':
         from data_ridi import RIDIGlobSpeedSequence
         seq_type = RIDIGlobSpeedSequence
+
     dataset = StridedSequenceDataset(
         seq_type, root_dir, data_list, args.cache_path, args.step_size, args.window_size,
         random_shift=random_shift, transform=transforms,
@@ -299,15 +308,18 @@ def test_sequence(args):
     preds_seq, targets_seq, losses_seq, ate_all, rte_all = [], [], [], [], []
     traj_lens = []
 
-    pred_per_min = 200 * 60
+    pred_per_min = 200 * 60  # TODO : why did they put a magic number
 
     for data in test_data_list:
         seq_dataset = get_dataset(root_dir, [data], args, mode='test')
-        seq_loader = DataLoader(seq_dataset, batch_size=1024, shuffle=False)
-        ind = np.array([i[1] for i in seq_dataset.index_map if i[0] == 0], dtype=np.int)
 
+        seq_loader = DataLoader(seq_dataset, batch_size=1024, shuffle=False)
+
+        ind = np.array([i[1] for i in seq_dataset.index_map if i[0] == 0], dtype=np.int)
         targets, preds = run_test(network, seq_loader, device, True)
         losses = np.mean((targets - preds) ** 2, axis=0)
+
+
         preds_seq.append(preds)
         targets_seq.append(targets)
         losses_seq.append(losses)
@@ -330,31 +342,35 @@ def test_sequence(args):
         elif kp == 3:
             targ_names = ['vx', 'vy', 'vz']
 
-        plt.figure('{}'.format(data), figsize=(16, 9))
-        plt.subplot2grid((kp, 2), (0, 0), rowspan=kp - 1)
-        plt.plot(pos_pred[:, 0], pos_pred[:, 1])
-        plt.plot(pos_gt[:, 0], pos_gt[:, 1])
-        plt.title(data)
-        plt.axis('equal')
-        plt.legend(['Predicted', 'Ground truth'])
-        plt.subplot2grid((kp, 2), (kp - 1, 0))
-        plt.plot(pos_cum_error)
-        plt.legend(['ATE:{:.3f}, RTE:{:.3f}'.format(ate_all[-1], rte_all[-1])])
-        for i in range(kp):
-            plt.subplot2grid((kp, 2), (i, 1))
-            plt.plot(ind, preds[:, i])
-            plt.plot(ind, targets[:, i])
+        if not args.fast_test:
+            plt.figure('{}'.format(data), figsize=(16, 9))
+            plt.subplot2grid((kp, 2), (0, 0), rowspan=kp - 1)
+
+            plt.plot(pos_pred[:, 0], pos_pred[:, 1])
+            plt.plot(pos_gt[:, 0], pos_gt[:, 1])
+            plt.title(data)
+            plt.axis('equal')
             plt.legend(['Predicted', 'Ground truth'])
-            plt.title('{}, error: {:.6f}'.format(targ_names[i], losses[i]))
-        plt.tight_layout()
 
-        if args.show_plot:
-            plt.show()
+            plt.subplot2grid((kp, 2), (kp - 1, 0))
+            plt.plot(pos_cum_error)
+            plt.legend(['ATE:{:.3f}, RTE:{:.3f}'.format(ate_all[-1], rte_all[-1])])
 
-        if args.out_dir is not None and osp.isdir(args.out_dir):
-            np.save(osp.join(args.out_dir, data + '_gsn.npy'),
-                    np.concatenate([pos_pred[:, :2], pos_gt[:, :2]], axis=1))
-            plt.savefig(osp.join(args.out_dir, data + '_gsn.png'))
+            for i in range(kp):
+                plt.subplot2grid((kp, 2), (i, 1))
+                plt.plot(ind, preds[:, i])
+                plt.plot(ind, targets[:, i])
+                plt.legend(['Predicted', 'Ground truth'])
+                plt.title('{}, error: {:.6f}'.format(targ_names[i], losses[i]))
+            plt.tight_layout()
+
+            if args.show_plot:
+                plt.show()
+
+            if args.out_dir is not None and osp.isdir(args.out_dir):
+                np.save(osp.join(args.out_dir, data + '_gsn.npy'),
+                        np.concatenate([pos_pred[:, :2], pos_gt[:, :2]], axis=1))
+                plt.savefig(osp.join(args.out_dir, data + '_gsn.png'))
 
         plt.close('all')
 

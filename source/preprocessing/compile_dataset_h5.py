@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 import pandas
 
+# TODO : generate my own dataset from my phone
 sys.path.append(osp.join(osp.dirname(osp.abspath(__file__)), '..'))
 from preprocessing.gen_dataset_v2 import compute_output_time, process_data_source
 
@@ -50,8 +51,8 @@ NOTICE: the HDF5 library will not read the data until it's actually used. For ex
         to force reading.
 '''
 
-_raw_data_sources = ['gyro', 'gyro_uncalib', 'acce', 'magnet', 'game_rv', 'linacce', 'gravity', 'step', 'rv',
-                     'pressure']
+_raw_data_sources = ['gyro', 'acce', 'magnet', 'pressure']
+# _raw_data_sources = ['gyro', 'gyro_uncalib', 'acce', 'magnet', 'game_rv', 'linacce', 'gravity', 'step', 'rv','pressure']
 _optional_data_sources = ['wifi', 'gps', 'magnetic_rv', 'magnet_uncalib']
 _synced_columns = {'time': 'time',
                    'gyro': ['gyro_x', 'gyro_y', 'gyro_z'],
@@ -209,11 +210,13 @@ def compile_unannotated_sequence(root_dir, data_list, args):
     Compile unannotated(or imu_only) sequence directly from raw files.
     """
     source_vector = {'gyro', 'gyro_uncalib', 'acce', 'linacce', 'gravity', 'magnet'}
+    # source_vector = {'gyro',  'acce', 'magnet'}
     source_quaternion = {'game_rv', 'rv'}
     source_all = source_vector.union(source_quaternion)
+    # source_all = source_vector.union(source_vector)
     fail_list = []
     for data in data_list:
-        try:
+        # try: #ANIS
             data_path = osp.join(root_dir, data)
             out_path = osp.join(args.out_dir, data)
             if osp.isdir(out_path):
@@ -250,24 +253,28 @@ def compile_unannotated_sequence(root_dir, data_list, args):
                         all_sources[source][:, [0, 4, 1, 2, 3]], output_time, 'quaternion')
 
             init_gyro_bias = processed_sources['gyro_uncalib'][0] - processed_sources['gyro'][0]
+            #Compile unannotated(or imu_only) sequence directly from raw files.
             end_gyro_bias = np.loadtxt(osp.join(data_path, 'gyro_bias.txt'))
             device = 'unknown'
-            with open(osp.join(data_path, 'acce_calib.txt')) as f:
-                line = f.readline().split()
-                date = line[3]
-                if line[-1] in _device_list:
-                    device = line[-1]
-            acce_calib = np.loadtxt(osp.join(data_path, 'acce_calib.txt'))
+
+            # ANIS
+            # with open(osp.join(data_path, 'acce_calib.txt')) as f:
+            #     line = f.readline().split()
+            #     date = line[3]
+            #     if line[-1] in _device_list:
+            #         device = line[-1]
+            # acce_calib = np.loadtxt(osp.join(data_path, 'acce_calib.txt'))
 
             meta_info = {'type': 'unannotated',
                          'length': output_time[-1] - output_time[0],
-                         'date': date,
+                        # 'date': date, #ANIS
                          'device': device,
                          'imu_reference_time': reference_time,
                          'imu_init_gyro_bias': init_gyro_bias.tolist(),
                          'imu_end_gyro_bias': end_gyro_bias.tolist(),
-                         'imu_acce_bias': acce_calib[0].tolist(),
-                         'imu_acce_scale': acce_calib[1].tolist()}
+                         # 'imu_acce_bias': acce_calib[0].tolist(), #ANIS
+                         #'imu_acce_scale': acce_calib[1].tolist() #ANIS
+                         }
             json.dump(meta_info, open(osp.join(out_path, 'info.json'), 'w'))
 
             with h5py.File(osp.join(out_path, 'data.hdf5'), 'x') as f:
@@ -283,9 +290,10 @@ def compile_unannotated_sequence(root_dir, data_list, args):
                     else:
                         f.create_dataset('synced/' + source, data=processed_sources[source])
 
-        except (OSError, FileNotFoundError, TypeError) as e:
-            print(e)
-            fail_list.append(data)
+        # except (OSError, FileNotFoundError, TypeError) as e: #ANIS
+        #     print(e)
+        #     print("hi")
+        #     fail_list.append(data)
 
     print('Fail list:')
     [print(data) for data in fail_list]
